@@ -4,32 +4,43 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const body_parser_1 = __importDefault(require("body-parser"));
 const node_apps_toolkit_1 = require("@contentful/node-apps-toolkit");
+const express_2 = require("./express");
 const app = (0, express_1.default)();
 const port = 3000;
-app.use(body_parser_1.default.json({
-    type: "application/vnd.contentful.management.v1+json",
-}));
-app.use((req, res, next) => {
-    const canonicalRequest = {
-        body: JSON.stringify(req.body),
-        headers: JSON.parse(JSON.stringify(req.headers)),
-        method: req.method,
-        path: req.path,
+(0, express_2.init)(app);
+function makeCanonicalRequest({ body, headers, method, path }) {
+    return {
+        body: JSON.stringify(body),
+        headers: JSON.parse(JSON.stringify(headers)),
+        method: method,
+        path,
     };
-    console.log("canonicalRequest", canonicalRequest);
-    console.log("signing secret", process.env.CONTENTFUL_SIGNING_SECRET);
-    if (!(0, node_apps_toolkit_1.verifyRequest)(process.env.CONTENTFUL_SIGNING_SECRET, canonicalRequest)) {
+}
+function verifyRequestMiddleware(req, res, next) {
+    // format the request for node-apps-toolkit
+    const canonicalRequest = makeCanonicalRequest(req);
+    if (
+    // use the signing secret to verify the request matches what was sent by Contentful
+    !(0, node_apps_toolkit_1.verifyRequest)(process.env.CONTENTFUL_SIGNING_SECRET, canonicalRequest)) {
+        console.warn('[Server]: 🙅 Unable to verify authenticity of request!!');
         return res
-            .status(401)
-            .send("Unauthorized. Cannot verify authenticity of request");
+            .status(403)
+            .send('Unauthorized. Cannot verify authenticity of request');
     }
     next();
-});
+}
+if (process.env.CONTENTFUL_SIGNING_SECRET) {
+    console.log(`[Server]: 🔒 Request verification is enabled.`);
+    app.use(verifyRequestMiddleware);
+}
+else {
+    console.warn('[Server]: ⛔️ Request verification is not enabled.');
+}
 app.post("/", (req, res) => {
+    console.log(`[Server]: ✨ Mission Statement Updated: ${req.body.fields.body['en-US']}`);
     res.json({ status: "ok" });
 });
 app.listen(port, () => {
-    console.log(`[Server]: I am running at https://localhost:${port}`);
+    console.log(`[Server]: 🟢 I am running at https://localhost:${port}`);
 });
